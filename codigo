@@ -1,37 +1,21 @@
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
-
-//libreria para la temperatura y humedad 
 #include "DHT.h"
 
-// pin del sensor DTH
-#define DHTPIN 4 
-
-//dependiendo del sensor 
-#define DHTTYPE DHT11
-//#define DHTTYPE DHT22
-
-#define LED_R 5 //se le asigna el valor de pwm
-#define LED_G 18
-#define LED_B 19
-
-//Asignamos al sensor el pin y el tipo 
-DHT dht(DHTPIN, DHTTYPE);
-
-//identificador del i2c, columnas y lineas 
-LiquidCrystal_I2C lcd(0x27,16,2);
+// Definir el tipo de sensor y el pin de datos del DHT11
+#define DHTPIN 4 // Pin donde está conectado el DHT11
+#define DHTTYPE DHT11 // Tipo de sensor (DHT11)
+#define RELAY_PIN 15 // Pin del relé
 
 #define START_BUTTON 0 // Pulsador para iniciar el modo de ajuste
-#define DECREASE_BUTTON 2 // Pulsador para disminuir el rango
+#define DECREASE_BUTTON 5 // Pulsador para disminuir el rango
 #define INCREASE_BUTTON 23 // Pulsador para aumentar el rango
-
 float blueMin = 17.0;
 float blueMax = 19.0;
 float greenMin = 20.0;
 float greenMax = 23.0;
 float redMin = 24.0;
 float redMax = 40.0;
-
 
 volatile bool isAdjustingModeFlag = false;
 volatile bool decreaseFlag = false;
@@ -41,6 +25,13 @@ bool isAdjustingMode = false; // Variable para indicar si estamos en modo de aju
 
 DHT dht(DHTPIN, DHTTYPE);
 
+// Inicializar la pantalla LCD con la dirección I2C (normalmente es 0x27 o 0x3F)
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Asegúrate de usar una librería compatible con ESP32
+
+// Pines del LED RGB
+#define RED_PIN 5
+#define GREEN_PIN 18
+#define BLUE_PIN 19
 // Funciones de interrupción (simplificadas)
 void IRAM_ATTR startAdjusting() {
   isAdjustingModeFlag = true;
@@ -53,49 +44,42 @@ void IRAM_ATTR  decreaseRange() {
 void  IRAM_ATTR increaseRange() {
   increaseFlag = true;
 }
-
-
-//se carga una vez al iniciar el esp32
 void setup() {
+  // Iniciar la comunicación serie para depuración
   Serial.begin(115200);
-  //inicio lcd
-  lcd.init();        
-  lcd.backlight();
 
-  //inicia el dht
+  // Inicializar el sensor DHT
   dht.begin();
 
-  //pines del LED como salidas 
-  pinMode(LED_R, OUTPUT);
-  pinMode(LED_G, OUTPUT);
-  pinMode(LED_B, OUTPUT);
+  // Inicializar la pantalla LCD
+  lcd.init();
+  lcd.backlight();
 
-  //pin rele
-  pinMode(15,OUTPUT);
-  digitalWrite(15,LOW )
+  // Configurar los pines del LED RGB como salida
+  pinMode(RED_PIN, OUTPUT);
+  pinMode(GREEN_PIN, OUTPUT);
+  pinMode(BLUE_PIN, OUTPUT);
 
   // Configurar los pines de los pulsadores como entrada
   pinMode(START_BUTTON, INPUT_PULLUP);
   pinMode(DECREASE_BUTTON, INPUT_PULLUP);
   pinMode(INCREASE_BUTTON, INPUT_PULLUP);
 
+  pinMode(RELAY_PIN, OUTPUT);
+  digitalWrite(RELAY_PIN, LOW);
+
   // Configurar interrupciones
   attachInterrupt(digitalPinToInterrupt(START_BUTTON), startAdjusting, FALLING);
   attachInterrupt(digitalPinToInterrupt(DECREASE_BUTTON), decreaseRange, FALLING);
   attachInterrupt(digitalPinToInterrupt(INCREASE_BUTTON), increaseRange, FALLING);
 
-
-  //define la posicion del cursor, columna y linea
+  // Mostrar un mensaje inicial en la pantalla
   lcd.setCursor(0, 0);
-  //imprime el mensaje inicial
-  lcd.print("Iniciando ");
+  lcd.print("Iniciando...");
   delay(2000);
   lcd.clear();
-
 }
-
 void loop() {
-
   // Manejar el estado de ajuste
   if (isAdjustingModeFlag) {
     isAdjustingModeFlag = false;
@@ -118,64 +102,64 @@ void loop() {
     }
   }
 
-  float tempC = dht.readTemperature();
+  // Leer temperatura y humedad del sensor
+  float temperatura = dht.readTemperature();
   float humedad = dht.readHumidity();
+
   // Comprobar si la lectura es válida
-  if (isnan(tempC) || isnan(humedad)) {
+  if (isnan(temperatura) || isnan(humedad)) {
     Serial.println("Error al leer del sensor DHT11");
     lcd.setCursor(0, 0);
     lcd.print("Error en sensor");
   } else {
   // Mostrar los valores en el monitor serie
     Serial.print("Temperatura leída: ");
-    Serial.println(tempC);
+    Serial.println(temperatura);
     Serial.print("Humedad: ");
     Serial.println(humedad);
 
- // lcd.clear();
-  //pantalla LCD 
-  //definimos la posicion del cursor linea 1 
+    // Mostrar los valores en la pantalla LCD
+    lcd.setCursor(0, 0);
+    lcd.print("Temp: ");
+    lcd.print(temperatura);
+    lcd.print(" C");
 
-  lcd.setCursor(0, 0);
-  lcd.print("Temp: ");
-  lcd.print(tempC);
-  
-  //  //definimos la posicion del cursor linea 2
+    lcd.setCursor(0, 1);
+    lcd.print("Hum: ");
+    lcd.print(humedad);
+    lcd.print(" %");
 
-  lcd.setCursor(0, 1);
-  lcd.print("Hum: ");
-  lcd.print(humedad);
-
-  controlarLedRGB(tempC);
+    // Controlar el color del LED RGB según la temperatura
+    controlarLedRGB(temperatura);
   }
-  //esperamos dos segundos para volver a ejecutar 
+
+  // Esperar 2 segundos antes de la siguiente lectura
   delay(2000);
+}
+// Controlar el LED RGB según la temperatura
+void controlarLedRGB(float temperatura) {
+  if (temperatura >= blueMin && temperatura <= blueMax) {
+    digitalWrite(BLUE_PIN, LOW);
+    digitalWrite(GREEN_PIN, HIGH);
+    digitalWrite(RED_PIN, LOW);
+    digitalWrite(RELAY_PIN, LOW);
+    Serial.println("Azul");
+  } else if (temperatura >= greenMin && temperatura <= greenMax) {
+    digitalWrite(BLUE_PIN, HIGH);
+    digitalWrite(GREEN_PIN, LOW);
+    digitalWrite(RED_PIN, LOW);
+    digitalWrite(RELAY_PIN, LOW);
+    Serial.println("Verde");
+  } else if (temperatura >= redMin) {
+    digitalWrite(BLUE_PIN, LOW);
+    digitalWrite(GREEN_PIN, LOW);
+    digitalWrite(RED_PIN, HIGH);
+    digitalWrite(RELAY_PIN,HIGH );
+    Serial.println("Rojo");
+  } 
+}
 
-  //controlar RGB 
-  void controlarLedRGB(float tempC {
-    if(tempC >= blueMin && tempC<= blueMax){
-    digitalWrite(LED_R, LOW);
-    digitalWrite(LED_G, HIGH);
-    digitalWrite(LED_B, LOW);
-    digitalWrite(15, LOW);
-    delay(5000);
-    
-    } else if (tempC >= greenMin && tempC <= greenMax){
-    digitalWrite(LED_R, LOW);
-    digitalWrite(LED_G, LOW);
-    digitalWrite(LED_B, HIGH);
-    digitalWrite(15, LOW);
-    delay(5000);
-
-    } else if (tempC >= redMin){
-    digitalWrite(LED_R, HIGH);
-    digitalWrite(LED_G, LOW);
-    digitalWrite(LED_B, LOW);
-    digitalWrite(15, HIGH);
-    delay(5000);
-    }
-  }
-  // Función para cambiar el modo de ajuste
+// Función para cambiar el modo de ajuste
 void handleAdjustingMode() {
   isAdjustingMode = !isAdjustingMode;
   Serial.println(isAdjustingMode ? "Ajuste Activado" : "Ajuste Desactivado");
@@ -209,7 +193,7 @@ void increaseRanges() {
   delay(100); // Añadir un retraso para evitar rebotes
 }
 
-// Mostrar los nuevos rangos en el monitor serial 
+// Mostrar los nuevos rangos en el monitor serie
 void mostrarRangos() {
   Serial.print("Rango Azul: ");
   Serial.print(blueMin);
@@ -223,7 +207,4 @@ void mostrarRangos() {
   Serial.print(redMin);
   Serial.print(" - ");
   Serial.println(redMax);
-}
-
-
 }
